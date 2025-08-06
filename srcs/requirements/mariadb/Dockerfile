@@ -40,12 +40,11 @@ EXPOSE 3306
 
 COPY conf/db.sh .
 
-# Execute the script to create and init the database
-
-RUN sh db.sh
+# Make the script executable
+RUN chmod +x db.sh
 
 USER mysql
 
-# Start MySQL server
+# Start MySQL server and run setup script
 
-CMD ["/usr/bin/mysqld", "--skip-log-error"]
+CMD ["sh", "-c", "./db.sh && exec /usr/bin/mysqld --skip-log-error"]
