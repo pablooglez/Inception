@@ -2,13 +2,6 @@
 
 FROM alpine:3.16
 
-# Declare build arguments (these will be passed from .env by docker-compose.yml)
-
-ARG DB_NAME
-ARG DB_USER
-ARG DB_PASS
-ARG DB_ROOT
-
 # Install MariaDB (update package index first and install both mariadb and client without cache)
 
 RUN apk update && apk add --no-cache mariadb mariadb-client
