@@ -1,50 +1,76 @@
-# OS base image
+# ===============================
+# DOCKERFILE FOR MARIADB
+# ===============================
+# MariaDB database configuration for WordPress
+# Based on Alpine Linux to keep the image lightweight
 
+# Base operating system: Alpine Linux (lightweight distribution)
 FROM alpine:3.16
 
-# Install MariaDB (update package index first and install both mariadb and client without cache)
-
+# ===============================
+# MARIADB INSTALLATION
+# ===============================
+# Update package index and install MariaDB with its client
+# --no-cache avoids storing temporary files, keeping the image small
 RUN apk update && apk add --no-cache mariadb mariadb-client
 
-# Create MySQL socket directory with correct permissions
-# chown command sets ownership of the folder /var/run/mysqld to MariaDB (which it 'mysql' user)
-
+# ===============================
+# DIRECTORY AND PERMISSIONS CONFIGURATION
+# ===============================
+# Create MySQL socket directory and assign correct permissions
+# The socket is necessary for local connections to MariaDB
+# chown assigns directory ownership to the 'mysql' user
 RUN mkdir -p /var/run/mysqld && chown mysql:mysql /var/run/mysqld
 
-# Configure MariaDB
-# Directory '/etc/my.cnf.d' should exists after MariDB installation, but just in case, we can create it otherwise
-# Echo writes the configuration into 'docker.cnf' file, using '\n' to have each option in newline
-# 'docker.cnf' should not exist before this command, but if so, its content will be overwritten, so no worries there =)
-
+# ===============================
+# MARIADB CONFIGURATION
+# ===============================
+# Create custom configuration directory if it doesn't exist
+# Write Docker custom configuration to docker.cnf file
+# This configuration allows connections from other containers:
+# - skip-host-cache: improves performance by omitting DNS cache
+# - skip-name-resolve: improves security by omitting reverse DNS resolution  
+# - bind-address=0.0.0.0: allows connections from any IP
 RUN mkdir -p /etc/my.cnf.d && echo '[mysqld]\nskip-host-cache\nskip-name-resolve\nbind-address=0.0.0.0' > /etc/my.cnf.d/docker.cnf
 
-# Disable skip-networking; needed in order to allow remote connections to the database (from another containers, for instance...)
-# 'skip-networking' is a MariaDB/MySQL config option that disables all TCP/IP connections to the database and onlys allow local connections through Unix sockets
-# Thus, we need to make sure this configuration is DISABLED
-# We find and comment that option in '/etc/my.cnf.d/mariadb-server.cnf', using sed command with -i flag (modify file) and syntax 's/SEARCH/REPLACE/'
-
+# ===============================
+# NETWORK CONFIGURATION
+# ===============================
+# Disable skip-networking to allow remote TCP/IP connections
+# skip-networking would force only local connections via Unix socket
+# We need TCP/IP connections so WordPress (in another container) can connect
+# sed finds and comments the skip-networking line in server configuration
 RUN sed -i 's/^skip-networking/#skip-networking/' /etc/my.cnf.d/mariadb-server.cnf
 
-# Init MariaDB database: this command initializes a new MariaDB database by setting up the necessary files and system tables
-# mysql_install_db creates basic structure of the database, as well as default tables
-# --user==mysql flag ensures that all database files are owned by the mysql user
-# --datadir=/var/lib/mysql flag tells MariaDB where to store its data, /var/lib/mysql is the default location tipaclly
-
+# ===============================
+# DATABASE INITIALIZATION
+# ===============================
+# Initialize new MariaDB database by creating files and system tables
+# mysql_install_db creates basic structure and default tables
+# --user=mysql ensures all files are owned by mysql user
+# --datadir specifies where to store data (/var/lib/mysql is standard location)
 RUN mysql_install_db --user=mysql --datadir=/var/lib/mysql
 
-# Informs Docker that the container will listen on port 3306 (MySQL default)
-
+# ===============================
+# PORT EXPOSURE AND CONFIGURATION FILES
+# ===============================
+# Inform Docker that container will listen on port 3306 (MySQL standard port)
 EXPOSE 3306
 
-# Copy database setup script, which has been previosly stored in '/conf'
-
+# Copy database configuration script from local directory
+# This script will create WordPress database and configure users
 COPY conf/db.sh .
 
 # Make the script executable
 RUN chmod +x db.sh
 
+# ===============================
+# USER CONFIGURATION AND STARTUP COMMAND
+# ===============================
+# Switch to mysql user for security (don't run as root)
 USER mysql
 
-# Start MySQL server and run setup script
-
+# Command executed when starting container:
+# 1. Execute database configuration script (db.sh)
+# 2. Start MySQL server in foreground without error logs
 CMD ["sh", "-c", "./db.sh && exec /usr/bin/mysqld --skip-log-error"]

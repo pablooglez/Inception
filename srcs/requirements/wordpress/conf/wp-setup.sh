@@ -1,8 +1,19 @@
 #!/bin/sh
 
-# =============================================
-# Early Exit Check - If WordPress is fully configured
-# =============================================
+# ===============================
+# WORDPRESS AUTOMATIC CONFIGURATION SCRIPT
+# ===============================
+# This script automates complete WordPress installation and configuration
+# Runs every time container starts, but includes checks
+# to avoid reconfiguring an already installed WordPress
+
+# ===============================
+# EARLY EXIT CHECK - WordPress already configured
+# ===============================
+# Check if WordPress is already fully configured to avoid reconfiguration:
+# 1. wp-config.php exists
+# 2. WordPress core is installed
+# 3. Specified user already exists
 if [ -f /var/www/html/wp-config.php ] && 
    wp core is-installed --allow-root --path="/var/www/html" && 
    wp user get "$WP_USER" --allow-root --path="/var/www/html" &>/dev/null; then
@@ -10,11 +21,14 @@ if [ -f /var/www/html/wp-config.php ] &&
     exit 0
 fi
 
-# =============================================
-# Normal Setup Process (Only runs if not configured)
-# =============================================
+# ===============================
+# NORMAL CONFIGURATION PROCESS (Only if not configured)
+# ===============================
 
-# Verify WP-CLI is installed
+# ===============================
+# PRELIMINARY CHECKS
+# ===============================
+# Verify WP-CLI is installed (tool needed for automation)
 if ! command -v wp > /dev/null 2>&1; then
     echo "Error: WP-CLI (wp command) is not installed"
     exit 1
@@ -26,20 +40,27 @@ if [ ! -f /var/www/html/wp-config.php ]; then
     exit 1
 fi
 
-# Check if PHP is installed
+# Verify PHP is installed
 if ! command -v php > /dev/null 2>&1; then
     echo "PHP is not installed. Exiting."
     exit 1
 fi
 
+# ===============================
+# DISPLAY CONFIGURATION INFORMATION
+# ===============================
 echo "Creating setup with the following values:"
 echo "DB_NAME: ${DB_NAME}"
 echo "DB_USER: ${DB_USER}"
 echo "DB_PASS: ${DB_PASS}"
 
-# Wait for MariaDB to be ready
-MAX_RETRIES=5
-RETRY_COUNT=0
+# ===============================
+# WAIT FOR MARIADB TO BE READY
+# ===============================
+# Implement retries to wait for MariaDB to be available
+# This is crucial because WordPress depends on the database
+MAX_RETRIES=5                           # Maximum number of attempts
+RETRY_COUNT=0                          # Current attempt counter
 until mysql -h mariadb -u"${DB_USER}" -p"${DB_PASS}" -e "USE ${DB_NAME};" 2>/dev/null; do
     RETRY_COUNT=$((RETRY_COUNT+1))
     if [ $RETRY_COUNT -ge $MAX_RETRIES ]; then
@@ -49,12 +70,15 @@ until mysql -h mariadb -u"${DB_USER}" -p"${DB_PASS}" -e "USE ${DB_NAME};" 2>/dev
         exit 1
     fi
     echo "Waiting for MariaDB... (attempt $RETRY_COUNT/$MAX_RETRIES)"
-    sleep 5
+    sleep 5                             # Wait 5 seconds between attempts
 done
 
 echo "Database ready. Proceeding with WordPress setup..."
 
-# Only run core install if WordPress isn't already installed
+# ===============================
+# WORDPRESS CORE INSTALLATION
+# ===============================
+# Only run core installation if WordPress is not already installed
 if ! wp core is-installed --allow-root --path="/var/www/html"; then
     echo "Running WordPress core installation..."
     wp core install --allow-root \
@@ -72,7 +96,10 @@ else
     echo "WordPress is already installed. Skipping core installation."
 fi
 
-# Only create user if it doesn't exist
+# ===============================
+# ADDITIONAL USER CREATION
+# ===============================
+# Only create additional user if it doesn't exist (besides admin)
 if ! wp user list --allow-root --path="/var/www/html" | grep -q "^\s*[0-9]\+\s\+$WP_USER\s"; then
     echo "Creating WordPress user '$WP_USER'..."
     wp user create "$WP_USER" "guest@example.com" \

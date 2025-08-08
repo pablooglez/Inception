@@ -1,18 +1,33 @@
-# OS base image
+# ===============================
+# DOCKERFILE FOR WORDPRESS
+# ===============================
+# WordPress configuration with PHP-FPM to serve dynamic content
+# Based on Alpine Linux to keep the image lightweight
+
+# Base operating system: Alpine Linux (latest stable version)
 FROM alpine:3.18
 
-# Arguments needed by the image building process
-ARG PHP_VERSION=82
+# ===============================
+# BUILD ARGUMENTS
+# ===============================
+# Variables passed during image build
+ARG PHP_VERSION=82                      # PHP version to install (8.2)
 
-ARG DB_NAME
-ARG DB_USER
-ARG DB_PASS
+# Database configuration variables
+ARG DB_NAME                             # Database name
+ARG DB_USER                             # Database user
+ARG DB_PASS                             # Database password
 
-ARG DOMAIN_NAME
-ARG WP_USER
-ARG WP_PASS
+# WordPress configuration variables
+ARG DOMAIN_NAME                         # Domain name (e.g: user.42.fr)
+ARG WP_USER                             # WordPress administrator user
+ARG WP_PASS                             # Administrator password
 
-# Convert args to environment variables for runtime (will be needed by the wp-setup script)
+# ===============================
+# CONVERT ARGUMENTS TO ENVIRONMENT VARIABLES
+# ===============================
+# Convert arguments to environment variables for runtime availability
+# Needed by configuration scripts that run when container starts
 ENV DB_NAME=$DB_NAME \
     DB_USER=$DB_USER \
     DB_PASS=$DB_PASS \
@@ -20,10 +35,15 @@ ENV DB_NAME=$DB_NAME \
     WP_USER=$WP_USER \
     WP_PASS=$WP_PASS
 
-# Install php and its main packages
-# Install wget and unzip
-# Clean cache after installation
-# All this is a single line commmand, you can display as you prefer for better readability
+# ===============================
+# PHP AND TOOLS INSTALLATION
+# ===============================
+# Install PHP-FPM and all extensions needed for WordPress:
+# - php-fpm: FastCGI Process Manager for serving PHP
+# - php-mysqli: extension to connect with MariaDB/MySQL
+# - php-json, php-curl, php-dom, etc.: extensions required by WordPress
+# Also install download tools and MySQL client
+# Everything in single layer to optimize image size
 RUN apk update && apk upgrade && apk add --no-cache \
     php${PHP_VERSION} php${PHP_VERSION}-fpm php${PHP_VERSION}-phar \
     php${PHP_VERSION}-mysqli php${PHP_VERSION}-json \
@@ -32,44 +52,74 @@ RUN apk update && apk upgrade && apk add --no-cache \
     php${PHP_VERSION}-openssl php${PHP_VERSION}-xml php${PHP_VERSION}-zip \
     php${PHP_VERSION}-redis wget unzip mysql-client && rm -rf /var/cache/apk/*
 
-# Install WP-CLI (to be used later in WordPress setup script)
+# ===============================
+# WP-CLI INSTALLATION
+# ===============================
+# WP-CLI is a command line tool for managing WordPress
+# Allows automating installation, configuration and management of WordPress sites
 RUN wget https://raw.githubusercontent.com/wp-cli/builds/gh-pages/phar/wp-cli.phar && \
     chmod +x wp-cli.phar && \
     mv wp-cli.phar /usr/local/bin/wp
 
-# Create a symlink for php binary, so any call to php will be redirected to php<used_version>: in our case, php82
+# ===============================
+# PHP CONFIGURATION
+# ===============================
+# Create symbolic link so 'php' points to specific installed version
+# This allows using generic 'php' commands in scripts
 RUN ln -s /usr/bin/php${PHP_VERSION} /usr/bin/php
 
-# Verify PHP installation before running wp-setup.sh
+# Verify PHP installed correctly
 RUN php -v
 
-# Modify PHP-FPM configuration
+# ===============================
+# PHP-FPM CONFIGURATION
+# ===============================
+# Modify PHP-FPM configuration to work in containers:
+# - Change listen from 127.0.0.1:9000 to 9000 (listen on all interfaces)
+# - Enable listen.owner and listen.group for correct permissions
+# This allows Nginx (in another container) to connect to PHP-FPM
 RUN sed -i "s|listen = 127.0.0.1:9000|listen = 9000|g" /etc/php${PHP_VERSION}/php-fpm.d/www.conf && \
     sed -i "s|;listen.owner = nobody|listen.owner = nobody|g" /etc/php${PHP_VERSION}/php-fpm.d/www.conf && \
     sed -i "s|;listen.group = nobody|listen.group = nobody|ig" /etc/php${PHP_VERSION}/php-fpm.d/www.conf
 
-# Set working directory
+# ===============================
+# WORDPRESS DOWNLOAD AND INSTALLATION
+# ===============================
+# Set working directory where WordPress files will reside
 WORKDIR /var/www/html
 
-# Download, unzip wordpress latest version (check on website and change according)
-# Move wordpress folder to working directry (/var/www/html)
-# Remove the .zip file that you don't need any more, keeping the image lighter
+# Download WordPress, unzip and move files to working directory:
+# 1. Download specific WordPress version (6.5.2)
+# 2. Unzip the ZIP file
+# 3. Copy content to current directory (/var/www/html)
+# 4. Clean temporary files to keep image lightweight
 RUN wget -O wordpress.zip https://wordpress.org/wordpress-6.5.2.zip && \
     unzip wordpress.zip && \
     cp -rf wordpress/* . && \
     rm -rf wordpress wordpress.zip
 
-# Copy script from project folder to image, which will be used to generate the wp-config.php
+# ===============================
+# WORDPRESS CONFIGURATION
+# ===============================
+# Copy script that will generate wp-config.php file
+# This file contains database connection configuration
 COPY conf/wp-config.sh .
 
-# Execute script, remove it after and give all persmissions to wp-content folder
+# Execute configuration script, remove it afterwards (security) 
+# and give full permissions to wp-content directory (needed by WordPress)
 RUN sh wp-config.sh && rm wp-config.sh && chmod -R 0777 wp-content/
 
-# Copy script to automate the installation of WordPress and setup of necessary services
+# ===============================
+# INITIALIZATION SCRIPT AND FINAL COMMAND
+# ===============================
+# Copy script that will automate complete WordPress installation
 COPY conf/wp-setup.sh /usr/local/bin/wp-setup.sh
 RUN chmod +x /usr/local/bin/wp-setup.sh
 
+# Port the container will expose (PHP-FPM listens on 9000)
 EXPOSE 9000
 
-# Start php-fpm service in the foreground and run wp-setup.sh
+# Container startup command:
+# 1. Execute WordPress configuration script (wp-setup.sh)
+# 2. Start PHP-FPM in foreground (-F) to keep container active
 CMD ["sh", "-c", "/usr/local/bin/wp-setup.sh && exec /usr/sbin/php-fpm82 -F"]

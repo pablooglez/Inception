@@ -1,88 +1,114 @@
+# Docker Compose for Inception project
+# Containerized LEMP stack (Linux, Nginx, MariaDB, PHP)
 version: '3'
 
 services:
+  # ===============================
+  # MariaDB SERVICE (Database)
+  # ===============================
   mariadb:
+    # Custom MariaDB image build
     build:
-      context: ./requirements/mariadb
-      dockerfile: Dockerfile
-      args:
-        DB_NAME: ${DB_NAME}
-        DB_USER: ${DB_USER}
-        DB_PASS: ${DB_PASS}
-        DB_ROOT: ${DB_ROOT}
-    container_name: mariadb
-    environment:
-      - DB_NAME=${DB_NAME}
-      - DB_USER=${DB_USER}
-      - DB_PASS=${DB_PASS}
-      - DB_ROOT=${DB_ROOT}
+      context: ./requirements/mariadb     # Directory with Dockerfile and configurations
+      dockerfile: Dockerfile             # Dockerfile to use
+      args:                             # Variables passed during build
+        DB_NAME: ${DB_NAME}             # WordPress database name
+        DB_USER: ${DB_USER}             # Database user
+        DB_PASS: ${DB_PASS}             # Database user password
+        DB_ROOT: ${DB_ROOT}             # MariaDB root user password
+    # MariaDB container configuration
+    container_name: mariadb             # Specific container name
+    environment:                        # Environment variables for running container
+      - DB_NAME=${DB_NAME}              # Database name for WordPress
+      - DB_USER=${DB_USER}              # User WordPress will use to connect
+      - DB_PASS=${DB_PASS}              # WordPress user password
+      - DB_ROOT=${DB_ROOT}              # Administrator (root) user password
     networks:
-      - inception
+      - inception                       # Custom network for inter-container communication
     volumes:
-      - db-volume:/var/lib/mysql
-    restart: on-failure
-    healthcheck:
-      test: ["CMD", "mysqladmin", "ping", "-h", "localhost"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
+      - db-volume:/var/lib/mysql        # Persistent volume for MariaDB data
+    restart: on-failure                 # Automatically restart if fails
+    healthcheck:                        # Service health verification
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost"]  # Command to verify MariaDB responds
+      interval: 10s                     # Run check every 10 seconds
+      timeout: 5s                       # 5 seconds timeout per check
+      retries: 5                        # Maximum 5 failed attempts before marking unhealthy
 
+  # ===============================
+  # WordPress SERVICE (Web Application)
+  # ===============================
   wordpress:
+    # Custom WordPress image build
     build:
-      context: ./requirements/wordpress
-      dockerfile: Dockerfile
-      args:
-        DB_NAME: ${DB_NAME}
-        DB_USER: ${DB_USER}
-        DB_PASS: ${DB_PASS}
-        DOMAIN_NAME: ${DOMAIN_NAME}
-        WP_USER: ${WP_USER}
-        WP_PASS: ${WP_PASS}
-    container_name: wordpress
-    environment:
-    - DB_NAME=${DB_NAME}
-    - DB_USER=${DB_USER}
-    - DB_PASS=${DB_PASS}
-    - DOMAIN_NAME=${DOMAIN_NAME}
-    - WP_USER=${WP_USER}
-    - WP_PASS=${WP_PASS}
-    depends_on:
+      context: ./requirements/wordpress  # Directory with WordPress Dockerfile and configurations
+      dockerfile: Dockerfile            # Dockerfile to use
+      args:                            # Variables passed during image build
+        DB_NAME: ${DB_NAME}            # Database name to use
+        DB_USER: ${DB_USER}            # User to connect to MariaDB
+        DB_PASS: ${DB_PASS}            # Password for database connection
+        DOMAIN_NAME: ${DOMAIN_NAME}    # Domain name for WordPress (e.g: user.42.fr)
+        WP_USER: ${WP_USER}            # WordPress administrator user
+        WP_PASS: ${WP_PASS}            # WordPress administrator password
+    # WordPress container configuration
+    container_name: wordpress           # Specific container name
+    environment:                        # Environment variables for running container
+    - DB_NAME=${DB_NAME}               # Database WordPress will use
+    - DB_USER=${DB_USER}               # User to connect to MariaDB
+    - DB_PASS=${DB_PASS}               # Password for database connection
+    - DOMAIN_NAME=${DOMAIN_NAME}       # Domain configured for WordPress
+    - WP_USER=${WP_USER}               # WordPress administrator user
+    - WP_PASS=${WP_PASS}               # WordPress admin password
+    depends_on:                         # Service dependencies
       mariadb:
-       condition: service_healthy
+       condition: service_healthy       # Wait for MariaDB to be healthy before starting
     networks:
-      - inception
+      - inception                       # Network for communication with other containers
     volumes:
-      - wp-volume:/var/www/html
-    restart: on-failure
+      - wp-volume:/var/www/html         # Persistent volume for WordPress files
+    restart: on-failure                 # Automatically restart if fails
 
+  # ===============================
+  # Nginx SERVICE (Web Server/Reverse Proxy)
+  # ===============================
   nginx:
+    # Custom Nginx image build
     build:
-      context: ./requirements/nginx
-      dockerfile: Dockerfile
-    container_name: nginx
-    depends_on:
-     - wordpress
+      context: ./requirements/nginx      # Directory with Nginx Dockerfile and configurations
+      dockerfile: Dockerfile            # Dockerfile to use
+    # Nginx container configuration
+    container_name: nginx               # Specific container name
+    depends_on:                         # Service dependencies
+     - wordpress                        # Wait for WordPress to be available
     ports:
-      - "443:443"
+      - "443:443"                       # Map port 443 (HTTPS) from host to container
     networks:
-     - inception
+     - inception                        # Network for communication with WordPress
     volumes:
-      - wp-volume:/var/www/html
-    restart: on-failure
+      - wp-volume:/var/www/html         # Shared access to WordPress files
+    restart: on-failure                 # Automatically restart if fails
 
+# ===============================
+# PERSISTENT VOLUMES
+# ===============================
 volumes:
+  # Volume for WordPress files (website)
   wp-volume:
     driver_opts:
-      o: bind
-      type: none
-      device: /home/${USER}/data/wordpress
+      o: bind                          # Mount type: bind mount
+      type: none                       # No specific driver
+      device: /home/${USER}/data/wordpress  # Directory on host where WP files are stored
 
+  # Volume for MariaDB data (database)
   db-volume:
     driver_opts:
-      o: bind
-      type: none
-      device: /home/${USER}/data/mariadb
+      o: bind                          # Mount type: bind mount
+      type: none                       # No specific driver
+      device: /home/${USER}/data/mariadb    # Directory on host where DB data is stored
 
+# ===============================
+# CUSTOM NETWORKS
+# ===============================
 networks:
+  # Internal network for inter-container communication
   inception:
-    driver: bridge
+    driver: bridge                     # Bridge network driver (isolated from host)
