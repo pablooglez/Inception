@@ -270,9 +270,3 @@ Este proyecto me permitió desarrollar competencias en:
 - GitHub: [@pablogon](https://github.com/pablooglez)
 
 ---
-
-<div align="center">
-
-⭐ **Si este proyecto te resultó útil, considera darle una estrella** ⭐
-
-</div>
